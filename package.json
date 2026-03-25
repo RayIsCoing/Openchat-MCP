@@ -1,12 +1,16 @@
 {
-  "name": "wechat-gsheet-mcp",
+  "name": "openchat-mcp",
   "version": "1.0.0",
-  "description": "MCP server for querying WeChat chat logs from Google Sheets",
+  "description": "MCP server for querying WeChat group chat logs from Google Sheets",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "wechat-gsheet-mcp": "dist/index.js"
+    "openchat-mcp": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/index.ts",

@@ -1,25 +1,19 @@
-# wechat-gsheet-mcp
+# Openchat-MCP
 
 MCP server for querying WeChat group chat logs. Search messages, view group activity, get summaries — all from Claude Code or OpenClaw.
 
 Data source: Google Sheets (updated every 12 hours).
 
-## Setup
+## Quick Start (npx, no install needed)
 
-### 1. Get API Key
-
-Ask the data provider for the Google API Key.
-
-### 2. Add to Claude Code
-
-Add to your Claude Code MCP config (`~/.claude.json` or project settings):
+Add to your Claude Code MCP config (`~/.claude.json`):
 
 ```json
 {
   "mcpServers": {
-    "wechat-chat": {
+    "openchat": {
       "command": "npx",
-      "args": ["-y", "tsx", "/path/to/wechat-gsheet-mcp/src/index.ts"],
+      "args": ["-y", "github:RayIsCoing/Openchat-MCP"],
       "env": {
         "GOOGLE_API_KEY": "your_api_key_here"
       }
@@ -28,14 +22,24 @@ Add to your Claude Code MCP config (`~/.claude.json` or project settings):
 }
 ```
 
-Or if you build first (`npm run build`):
+That's it. No clone, no build — `npx` handles everything automatically.
+
+## Alternative: Clone & Run Locally
+
+```bash
+git clone https://github.com/RayIsCoing/Openchat-MCP.git
+cd Openchat-MCP
+npm install
+```
+
+Then add to your MCP config:
 
 ```json
 {
   "mcpServers": {
-    "wechat-chat": {
+    "openchat": {
       "command": "node",
-      "args": ["/path/to/wechat-gsheet-mcp/dist/index.js"],
+      "args": ["/path/to/Openchat-MCP/dist/index.js"],
       "env": {
         "GOOGLE_API_KEY": "your_api_key_here"
       }
@@ -43,6 +47,10 @@ Or if you build first (`npm run build`):
   }
 }
 ```
+
+## Get API Key
+
+Contact the data provider for access.
 
 ## Available Tools
 

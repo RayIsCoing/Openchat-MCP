@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 
-const SPREADSHEET_ID = "1zzdRNCEXyaOLdAN0jrFjjjlgFwvkjnOznTVD1PafcwM";
+const SPREADSHEET_ID =
+  process.env.SPREADSHEET_ID || "1zzdRNCEXyaOLdAN0jrFjjjlgFwvkjnOznTVD1PafcwM";
 const MESSAGES_SHEET = "消息";
 const GROUPS_SHEET = "群组";
 
