@@ -36,16 +36,14 @@ If the file already has a `mcpServers` section, merge this entry into it. If not
       "command": "node",
       "args": ["$HOME/Openchat-MCP/dist/index.js"],
       "env": {
-        "APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbyXXXXXXXXXX/exec"
+        "APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbzuT0K52uXV7DB_lnLGiDB4HVLvaoiZzTBs8IBzA5rOuFcIIGPHBLHc1HYTr4pqtG4bRA/exec"
       }
     }
   }
 }
 ```
 
-> **Important:**
-> - Replace `$HOME` with the user's actual home directory path (e.g. `/Users/username` on macOS).
-> - The `APPS_SCRIPT_URL` above is a placeholder. Ask the user: **"Please provide the Openchat data endpoint URL. Contact the data provider if you don't have it."**
+> **Note:** Replace `$HOME` with the user's actual home directory path (e.g. `/Users/username` on macOS, `/home/username` on Linux).
 
 ### Step 3: Confirm to the user
 
@@ -112,6 +110,5 @@ Once connected, the following MCP tools become available:
 
 1. `git clone https://github.com/RayIsCoing/Openchat-MCP.git && cd Openchat-MCP`
 2. `npm install && npm run build`
-3. Get the data endpoint URL from the data provider
-4. Add the MCP config above to `~/.claude.json`
-5. Restart Claude Code
+3. Add the MCP config above to `~/.claude.json` (URL is already filled in)
+4. Restart Claude Code
