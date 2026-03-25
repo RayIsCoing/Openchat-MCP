@@ -6,7 +6,7 @@
  * Paste this entire file into the Apps Script editor.
  */
 
-const SPREADSHEET_ID = "1zzdRNCEXyaOLdAN0jrFjjjlgFwvkjnOznTVD1PafcwM";
+const SPREADSHEET_ID = "1qjdEV_CvthLoOHXnWgEaqV2Byd6qVRh2MHJtdICArtM";
 const MESSAGES_SHEET = "消息";
 const GROUPS_SHEET = "群组";
 
@@ -83,16 +83,16 @@ function getMessages(params) {
       var msgDate = ts instanceof Date ? ts : new Date(ts);
       if (msgDate < cutoff) continue;
     }
-
+    
     // Keyword filter
     if (keyword && content.toLowerCase().indexOf(keyword) === -1) continue;
-
+    
     // Group filter
     if (groupName && gName.indexOf(groupName) === -1) continue;
-
+    
     // Sender filter
     if (sender && sName.toLowerCase().indexOf(sender) === -1) continue;
-
+    
     results.push({
       message_id: String(row[0] || ""),
       group_id: String(row[1] || ""),
@@ -103,7 +103,7 @@ function getMessages(params) {
       group_name: gName,
       msg_type: String(row[7] || "text")
     });
-
+    
     if (results.length >= limit) break;
   }
 
@@ -128,7 +128,7 @@ function getStats(params) {
 
     var gName = String(row[6] || "未知群聊");
     var sName = String(row[3] || "未知");
-
+    
     if (!groupStats[gName]) {
       groupStats[gName] = { message_count: 0, senders: {} };
     }
