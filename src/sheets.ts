@@ -1,9 +1,13 @@
-import { google } from "googleapis";
+/**
+ * Data layer: fetches from Google Apps Script Web App proxy.
+ * No API key needed — the Apps Script handles sheet access.
+ */
 
-const SPREADSHEET_ID =
-  process.env.SPREADSHEET_ID || "1zzdRNCEXyaOLdAN0jrFjjjlgFwvkjnOznTVD1PafcwM";
-const MESSAGES_SHEET = "消息";
-const GROUPS_SHEET = "群组";
+const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || "";
+
+if (!APPS_SCRIPT_URL) {
+  console.error("ERROR: APPS_SCRIPT_URL environment variable is required");
+}
 
 // Cache: reload every 15 minutes
 const CACHE_TTL_MS = 15 * 60 * 1000;
@@ -26,197 +30,121 @@ export interface Group {
 }
 
 interface Cache<T> {
-  data: T[];
+  data: T;
   loaded_at: number;
 }
 
-let messagesCache: Cache<Message> | null = null;
-let groupsCache: Cache<Group> | null = null;
-
-function getSheets() {
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) throw new Error("GOOGLE_API_KEY environment variable is required");
-  return google.sheets({ version: "v4", auth: apiKey });
-}
+let groupsCache: Cache<Group[]> | null = null;
 
 function isStale<T>(cache: Cache<T> | null): boolean {
   return !cache || Date.now() - cache.loaded_at > CACHE_TTL_MS;
 }
 
-export async function loadMessages(forceRefresh = false): Promise<Message[]> {
-  if (!forceRefresh && !isStale(messagesCache)) return messagesCache!.data;
+async function fetchAPI(params: Record<string, string>): Promise<any> {
+  const url = new URL(APPS_SCRIPT_URL);
+  for (const [k, v] of Object.entries(params)) {
+    url.searchParams.set(k, v);
+  }
 
-  const sheets = getSheets();
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${MESSAGES_SHEET}!A2:H`,
-  });
-
-  const rows = res.data.values ?? [];
-  const messages: Message[] = rows.map((r) => ({
-    message_id: r[0] ?? "",
-    group_id: r[1] ?? "",
-    sender_id: r[2] ?? "",
-    sender_name: r[3] ?? "未知",
-    timestamp: r[4] ?? "",
-    content: r[5] ?? "",
-    group_name: r[6] ?? "未知群聊",
-    msg_type: r[7] ?? "text",
-  }));
-
-  messagesCache = { data: messages, loaded_at: Date.now() };
-  return messages;
+  const res = await fetch(url.toString(), { redirect: "follow" });
+  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
 }
+
+// ── Groups ──
 
 export async function loadGroups(forceRefresh = false): Promise<Group[]> {
   if (!forceRefresh && !isStale(groupsCache)) return groupsCache!.data;
 
-  const sheets = getSheets();
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${GROUPS_SHEET}!A2:C`,
-  });
-
-  const rows = res.data.values ?? [];
-  const groups: Group[] = rows.map((r) => ({
-    group_id: r[0] ?? "",
-    group_name: r[1] ?? "",
-    member_count: parseInt(r[2] ?? "0", 10) || 0,
-  }));
-
+  const data = await fetchAPI({ action: "groups" });
+  const groups: Group[] = data.groups ?? [];
   groupsCache = { data: groups, loaded_at: Date.now() };
   return groups;
 }
 
-// ── Query helpers ──
+// ── Messages (always fetched fresh with server-side filtering) ──
 
 export async function searchMessages(
   keyword: string,
   opts: { group_name?: string; limit?: number; hours?: number } = {}
 ): Promise<Message[]> {
-  const all = await loadMessages();
-  const kw = keyword.toLowerCase();
-  const cutoff = opts.hours ? Date.now() - opts.hours * 3600_000 : 0;
+  const params: Record<string, string> = {
+    action: "messages",
+    keyword,
+  };
+  if (opts.group_name) params.group_name = opts.group_name;
+  if (opts.hours) params.hours = String(opts.hours);
+  if (opts.limit) params.limit = String(opts.limit);
 
-  let results = all.filter((m) => {
-    if (!m.content.toLowerCase().includes(kw)) return false;
-    if (opts.group_name && !m.group_name.includes(opts.group_name)) return false;
-    if (cutoff && new Date(m.timestamp).getTime() < cutoff) return false;
-    return true;
-  });
-
-  // Sort by time descending (newest first)
-  results.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-  return results.slice(0, opts.limit ?? 100);
+  const data = await fetchAPI(params);
+  return data.messages ?? [];
 }
 
 export async function getRecentMessages(
   hours: number = 24,
   groupName?: string
 ): Promise<Message[]> {
-  const all = await loadMessages();
-  const cutoff = Date.now() - hours * 3600_000;
+  const params: Record<string, string> = {
+    action: "messages",
+    hours: String(hours),
+    limit: "1000",
+  };
+  if (groupName) params.group_name = groupName;
 
-  let results = all.filter((m) => {
-    const ts = new Date(m.timestamp).getTime();
-    if (ts < cutoff) return false;
-    if (groupName && !m.group_name.includes(groupName)) return false;
-    return true;
-  });
-
-  results.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  return results;
+  const data = await fetchAPI(params);
+  return data.messages ?? [];
 }
 
 export async function getGroupMessages(
   groupName: string,
   limit: number = 200
 ): Promise<Message[]> {
-  const all = await loadMessages();
-  const results = all
-    .filter((m) => m.group_name.includes(groupName))
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, limit);
-  return results;
+  const data = await fetchAPI({
+    action: "messages",
+    group_name: groupName,
+    limit: String(limit),
+  });
+  return data.messages ?? [];
 }
+
+// ── Stats (server-side aggregation) ──
 
 export interface GroupStats {
   group_name: string;
   message_count: number;
   active_users: number;
   top_senders: { name: string; count: number }[];
-  latest_message_time: string;
-  msg_type_breakdown: Record<string, number>;
 }
 
 export async function getStats(hours: number = 24): Promise<GroupStats[]> {
-  const messages = await getRecentMessages(hours);
-
-  const byGroup = new Map<string, Message[]>();
-  for (const m of messages) {
-    const arr = byGroup.get(m.group_name) || [];
-    arr.push(m);
-    byGroup.set(m.group_name, arr);
-  }
-
-  const stats: GroupStats[] = [];
-  for (const [groupName, msgs] of byGroup) {
-    const senderCounts = new Map<string, number>();
-    const typeCounts: Record<string, number> = {};
-
-    for (const m of msgs) {
-      senderCounts.set(m.sender_name, (senderCounts.get(m.sender_name) || 0) + 1);
-      typeCounts[m.msg_type] = (typeCounts[m.msg_type] || 0) + 1;
-    }
-
-    const topSenders = [...senderCounts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([name, count]) => ({ name, count }));
-
-    const sorted = msgs.sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-
-    stats.push({
-      group_name: groupName,
-      message_count: msgs.length,
-      active_users: senderCounts.size,
-      top_senders: topSenders,
-      latest_message_time: sorted[0]?.timestamp ?? "",
-      msg_type_breakdown: typeCounts,
-    });
-  }
-
-  stats.sort((a, b) => b.message_count - a.message_count);
-  return stats;
+  const data = await fetchAPI({
+    action: "stats",
+    hours: String(hours),
+  });
+  return data.stats ?? [];
 }
+
+// ── Client-side analysis (built on top of messages) ──
 
 export async function getHotTopics(
   hours: number = 24,
   groupName?: string
 ): Promise<{ keyword: string; count: number; sample_messages: string[] }[]> {
   const messages = await getRecentMessages(hours, groupName);
-
-  // Extract frequently mentioned words/phrases (simple frequency analysis)
-  // Filter only text messages with content
   const textMsgs = messages.filter((m) => m.msg_type === "text" && m.content.length > 1);
 
-  // Bigram + trigram frequency (Chinese text segmentation approximation)
   const phraseCount = new Map<string, { count: number; samples: string[] }>();
 
   for (const m of textMsgs) {
     const content = m.content;
-    // Skip very short or system messages
     if (content.length < 4) continue;
 
-    // Extract 2-4 char segments (rough Chinese "word" extraction)
     const seen = new Set<string>();
     for (let len = 2; len <= 4; len++) {
       for (let i = 0; i <= content.length - len; i++) {
         const seg = content.substring(i, i + len);
-        // Skip if contains only punctuation/whitespace/numbers
         if (/^[\s\d\p{P}]+$/u.test(seg)) continue;
         if (seen.has(seg)) continue;
         seen.add(seg);
@@ -231,7 +159,6 @@ export async function getHotTopics(
     }
   }
 
-  // Filter: at least 5 mentions, sort by frequency
   return [...phraseCount.entries()]
     .filter(([, v]) => v.count >= 5)
     .sort((a, b) => b[1].count - a[1].count)
@@ -247,12 +174,14 @@ export async function getContextAroundMessage(
   messageId: string,
   contextSize: number = 10
 ): Promise<Message[]> {
-  const all = await loadMessages();
+  // Fetch a large batch and find context client-side
+  const data = await fetchAPI({ action: "messages", limit: "5000" });
+  const all: Message[] = data.messages ?? [];
+
   const idx = all.findIndex((m) => m.message_id === messageId);
   if (idx === -1) return [];
 
   const groupName = all[idx].group_name;
-  // Get messages in same group
   const groupMsgs = all.filter((m) => m.group_name === groupName);
   const gIdx = groupMsgs.findIndex((m) => m.message_id === messageId);
 
@@ -265,18 +194,15 @@ export async function getSenderActivity(
   senderName: string,
   opts: { hours?: number; limit?: number } = {}
 ): Promise<{ messages: Message[]; groups: string[]; message_count: number }> {
-  const all = await loadMessages();
-  const cutoff = opts.hours ? Date.now() - opts.hours * 3600_000 : 0;
+  const params: Record<string, string> = {
+    action: "messages",
+    sender: senderName,
+  };
+  if (opts.hours) params.hours = String(opts.hours);
+  if (opts.limit) params.limit = String(opts.limit ?? 100);
 
-  const messages = all
-    .filter((m) => {
-      if (!m.sender_name.includes(senderName)) return false;
-      if (cutoff && new Date(m.timestamp).getTime() < cutoff) return false;
-      return true;
-    })
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, opts.limit ?? 100);
-
+  const data = await fetchAPI(params);
+  const messages: Message[] = data.messages ?? [];
   const groups = [...new Set(messages.map((m) => m.group_name))];
 
   return { messages, groups, message_count: messages.length };

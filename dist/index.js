@@ -6,119 +6,68 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 // src/sheets.ts
-import { google } from "googleapis";
-var SPREADSHEET_ID = process.env.SPREADSHEET_ID || "1zzdRNCEXyaOLdAN0jrFjjjlgFwvkjnOznTVD1PafcwM";
-var MESSAGES_SHEET = "\u6D88\u606F";
-var GROUPS_SHEET = "\u7FA4\u7EC4";
-var CACHE_TTL_MS = 15 * 60 * 1e3;
-var messagesCache = null;
-var groupsCache = null;
-function getSheets() {
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) throw new Error("GOOGLE_API_KEY environment variable is required");
-  return google.sheets({ version: "v4", auth: apiKey });
+var APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL || "";
+if (!APPS_SCRIPT_URL) {
+  console.error("ERROR: APPS_SCRIPT_URL environment variable is required");
 }
+var CACHE_TTL_MS = 15 * 60 * 1e3;
+var groupsCache = null;
 function isStale(cache) {
   return !cache || Date.now() - cache.loaded_at > CACHE_TTL_MS;
 }
-async function loadMessages(forceRefresh = false) {
-  if (!forceRefresh && !isStale(messagesCache)) return messagesCache.data;
-  const sheets = getSheets();
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${MESSAGES_SHEET}!A2:H`
-  });
-  const rows = res.data.values ?? [];
-  const messages = rows.map((r) => ({
-    message_id: r[0] ?? "",
-    group_id: r[1] ?? "",
-    sender_id: r[2] ?? "",
-    sender_name: r[3] ?? "\u672A\u77E5",
-    timestamp: r[4] ?? "",
-    content: r[5] ?? "",
-    group_name: r[6] ?? "\u672A\u77E5\u7FA4\u804A",
-    msg_type: r[7] ?? "text"
-  }));
-  messagesCache = { data: messages, loaded_at: Date.now() };
-  return messages;
+async function fetchAPI(params) {
+  const url = new URL(APPS_SCRIPT_URL);
+  for (const [k, v] of Object.entries(params)) {
+    url.searchParams.set(k, v);
+  }
+  const res = await fetch(url.toString(), { redirect: "follow" });
+  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
 }
 async function loadGroups(forceRefresh = false) {
   if (!forceRefresh && !isStale(groupsCache)) return groupsCache.data;
-  const sheets = getSheets();
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${GROUPS_SHEET}!A2:C`
-  });
-  const rows = res.data.values ?? [];
-  const groups = rows.map((r) => ({
-    group_id: r[0] ?? "",
-    group_name: r[1] ?? "",
-    member_count: parseInt(r[2] ?? "0", 10) || 0
-  }));
+  const data = await fetchAPI({ action: "groups" });
+  const groups = data.groups ?? [];
   groupsCache = { data: groups, loaded_at: Date.now() };
   return groups;
 }
 async function searchMessages(keyword, opts = {}) {
-  const all = await loadMessages();
-  const kw = keyword.toLowerCase();
-  const cutoff = opts.hours ? Date.now() - opts.hours * 36e5 : 0;
-  let results = all.filter((m) => {
-    if (!m.content.toLowerCase().includes(kw)) return false;
-    if (opts.group_name && !m.group_name.includes(opts.group_name)) return false;
-    if (cutoff && new Date(m.timestamp).getTime() < cutoff) return false;
-    return true;
-  });
-  results.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  return results.slice(0, opts.limit ?? 100);
+  const params = {
+    action: "messages",
+    keyword
+  };
+  if (opts.group_name) params.group_name = opts.group_name;
+  if (opts.hours) params.hours = String(opts.hours);
+  if (opts.limit) params.limit = String(opts.limit);
+  const data = await fetchAPI(params);
+  return data.messages ?? [];
 }
 async function getRecentMessages(hours = 24, groupName) {
-  const all = await loadMessages();
-  const cutoff = Date.now() - hours * 36e5;
-  let results = all.filter((m) => {
-    const ts = new Date(m.timestamp).getTime();
-    if (ts < cutoff) return false;
-    if (groupName && !m.group_name.includes(groupName)) return false;
-    return true;
-  });
-  results.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  return results;
+  const params = {
+    action: "messages",
+    hours: String(hours),
+    limit: "1000"
+  };
+  if (groupName) params.group_name = groupName;
+  const data = await fetchAPI(params);
+  return data.messages ?? [];
 }
 async function getGroupMessages(groupName, limit = 200) {
-  const all = await loadMessages();
-  const results = all.filter((m) => m.group_name.includes(groupName)).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit);
-  return results;
+  const data = await fetchAPI({
+    action: "messages",
+    group_name: groupName,
+    limit: String(limit)
+  });
+  return data.messages ?? [];
 }
 async function getStats(hours = 24) {
-  const messages = await getRecentMessages(hours);
-  const byGroup = /* @__PURE__ */ new Map();
-  for (const m of messages) {
-    const arr = byGroup.get(m.group_name) || [];
-    arr.push(m);
-    byGroup.set(m.group_name, arr);
-  }
-  const stats = [];
-  for (const [groupName, msgs] of byGroup) {
-    const senderCounts = /* @__PURE__ */ new Map();
-    const typeCounts = {};
-    for (const m of msgs) {
-      senderCounts.set(m.sender_name, (senderCounts.get(m.sender_name) || 0) + 1);
-      typeCounts[m.msg_type] = (typeCounts[m.msg_type] || 0) + 1;
-    }
-    const topSenders = [...senderCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count }));
-    const sorted = msgs.sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-    stats.push({
-      group_name: groupName,
-      message_count: msgs.length,
-      active_users: senderCounts.size,
-      top_senders: topSenders,
-      latest_message_time: sorted[0]?.timestamp ?? "",
-      msg_type_breakdown: typeCounts
-    });
-  }
-  stats.sort((a, b) => b.message_count - a.message_count);
-  return stats;
+  const data = await fetchAPI({
+    action: "stats",
+    hours: String(hours)
+  });
+  return data.stats ?? [];
 }
 async function getHotTopics(hours = 24, groupName) {
   const messages = await getRecentMessages(hours, groupName);
@@ -150,7 +99,8 @@ async function getHotTopics(hours = 24, groupName) {
   }));
 }
 async function getContextAroundMessage(messageId, contextSize = 10) {
-  const all = await loadMessages();
+  const data = await fetchAPI({ action: "messages", limit: "5000" });
+  const all = data.messages ?? [];
   const idx = all.findIndex((m) => m.message_id === messageId);
   if (idx === -1) return [];
   const groupName = all[idx].group_name;
@@ -161,13 +111,14 @@ async function getContextAroundMessage(messageId, contextSize = 10) {
   return groupMsgs.slice(start, end);
 }
 async function getSenderActivity(senderName, opts = {}) {
-  const all = await loadMessages();
-  const cutoff = opts.hours ? Date.now() - opts.hours * 36e5 : 0;
-  const messages = all.filter((m) => {
-    if (!m.sender_name.includes(senderName)) return false;
-    if (cutoff && new Date(m.timestamp).getTime() < cutoff) return false;
-    return true;
-  }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, opts.limit ?? 100);
+  const params = {
+    action: "messages",
+    sender: senderName
+  };
+  if (opts.hours) params.hours = String(opts.hours);
+  if (opts.limit) params.limit = String(opts.limit ?? 100);
+  const data = await fetchAPI(params);
+  const messages = data.messages ?? [];
   const groups = [...new Set(messages.map((m) => m.group_name))];
   return { messages, groups, message_count: messages.length };
 }

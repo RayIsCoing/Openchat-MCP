@@ -4,9 +4,9 @@
 
 ## What is this
 
-An MCP (Model Context Protocol) server that gives you access to WeChat group chat logs stored in Google Sheets. Once installed, you can search messages, analyze group activity, get summaries, and more — directly through natural language.
+An MCP (Model Context Protocol) server that gives you access to WeChat group chat logs. Once installed, you can search messages, analyze group activity, get summaries, and more — directly through natural language.
 
-Data is updated every 12 hours.
+Data is updated every 12 hours. No API key needed.
 
 ---
 
@@ -23,15 +23,11 @@ npm install
 npm run build
 ```
 
-### Step 2: Ask the user for their API Key
+### Step 2: Add MCP config
 
-Tell the user:
+Add the following to the user's Claude Code MCP configuration file (`~/.claude.json`).
 
-> "This MCP requires a Google API Key to access the chat data. Please paste your API Key. If you don't have one, contact the data provider (RayIsCoing) to get access."
-
-### Step 3: Add MCP config
-
-After receiving the API key, add the following to the user's Claude Code MCP configuration file (`~/.claude.json`). Replace `YOUR_API_KEY` with the actual key:
+If the file already has a `mcpServers` section, merge this entry into it. If not, create it:
 
 ```json
 {
@@ -40,20 +36,22 @@ After receiving the API key, add the following to the user's Claude Code MCP con
       "command": "node",
       "args": ["$HOME/Openchat-MCP/dist/index.js"],
       "env": {
-        "GOOGLE_API_KEY": "YOUR_API_KEY"
+        "APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbyXXXXXXXXXX/exec"
       }
     }
   }
 }
 ```
 
-> **Note:** `$HOME` should be expanded to the user's actual home directory path (e.g. `/Users/username` on macOS, `/home/username` on Linux).
+> **Important:**
+> - Replace `$HOME` with the user's actual home directory path (e.g. `/Users/username` on macOS).
+> - The `APPS_SCRIPT_URL` above is a placeholder. Ask the user: **"Please provide the Openchat data endpoint URL. Contact the data provider if you don't have it."**
 
-### Step 4: Confirm to the user
+### Step 3: Confirm to the user
 
 Tell the user:
 
-> "Openchat-MCP is ready. Restart Claude Code, then you can ask me things like:"
+> "Openchat-MCP is ready. Restart Claude Code (or run `/mcp` to check status), then you can ask me things like:"
 > - "帮我总结一下最近24小时各群的讨论热点"
 > - "搜索关于 BTC 的讨论"
 > - "看看XX群最近在聊什么"
@@ -110,12 +108,10 @@ Once connected, the following MCP tools become available:
 
 ---
 
-## For humans
+## For humans (manual setup)
 
-If you're setting this up manually:
-
-1. Clone: `git clone https://github.com/RayIsCoing/Openchat-MCP.git`
-2. Install: `cd Openchat-MCP && npm install && npm run build`
-3. Get an API Key from the data provider
-4. Add the MCP config shown above to `~/.claude.json`
+1. `git clone https://github.com/RayIsCoing/Openchat-MCP.git && cd Openchat-MCP`
+2. `npm install && npm run build`
+3. Get the data endpoint URL from the data provider
+4. Add the MCP config above to `~/.claude.json`
 5. Restart Claude Code
