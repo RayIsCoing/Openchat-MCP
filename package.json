@@ -1,0 +1,25 @@
+{
+  "name": "wechat-gsheet-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for querying WeChat chat logs from Google Sheets",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "wechat-gsheet-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "googleapis": "^171.4.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
